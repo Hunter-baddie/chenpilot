@@ -9,6 +9,9 @@ import {
   Message,
   TextChannel,
   ChannelType,
+  Interaction,
+  ButtonInteraction,
+  ChatInputCommandInteraction,
 } from 'discord.js';
 import { ButtonHandler } from './modules/interaction/ButtonHandler';
 import { ThreadSafety } from './modules/thread/ThreadSafety';
@@ -22,6 +25,11 @@ import {
   discordMessageToModerationEvent,
   type ModerationResult,
 } from '../moderation/index';
+import { mapDiscordCommandOptions } from './commandOptionsMapper';
+import {
+  CommandOptionValidationError,
+  DiscordCommandDto,
+} from './dto/commandOptions.dto';
 
 /**
  * Channels that can receive a plain-text follow-up (warning notice or
@@ -142,7 +150,7 @@ export class DiscordAdapter {
   /**
    * Handle Discord interactions
    */
-  private async handleInteraction(interaction: any): Promise<void> {
+  private async handleInteraction(interaction: Interaction): Promise<void> {
     try {
       if (interaction.isButton()) {
         await this.handleButtonInteraction(interaction);
@@ -161,7 +169,7 @@ export class DiscordAdapter {
   /**
    * Handle button interaction
    */
-  private async handleButtonInteraction(interaction: any): Promise<void> {
+  private async handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
     const discordInteraction = {
       type: 'button' as const,
       id: interaction.id,
@@ -210,7 +218,7 @@ export class DiscordAdapter {
   /**
    * Handle command interaction
    */
-  private async handleCommandInteraction(interaction: any): Promise<void> {
+  private async handleCommandInteraction(interaction: ChatInputCommandInteraction): Promise<void> {
     const commandName = interaction.commandName;
 
     // Check role gate
@@ -230,11 +238,25 @@ export class DiscordAdapter {
       }
     }
 
-    // TODO: Execute command via backend
+    // Validate and map raw options into versioned DTO
+    let commandDto: DiscordCommandDto;
+    try {
+      commandDto = mapDiscordCommandOptions(commandName, interaction.options?.data);
+    } catch (error) {
+      if (error instanceof CommandOptionValidationError) {
+        await interaction.reply({
+          content: `Invalid command options: ${error.message}`,
+          ephemeral: true,
+        });
+        return;
+      }
+      throw error;
+    }
+
     try {
       const result = await this.backendClient.executeCommand(
         commandName,
-        interaction.options.data,
+        commandDto,
         interaction.user.id
       );
 

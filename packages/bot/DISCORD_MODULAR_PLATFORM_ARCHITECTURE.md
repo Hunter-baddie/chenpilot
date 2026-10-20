@@ -148,15 +148,49 @@ class CommandHandler {
 }
 ```
 
-### Slash Command Handler
+### Slash Command Handler & Option DTO Mapping
+
+The adapter decodes and validates incoming `interaction.options.data` into a versioned, platform-neutral `DiscordCommandDto` before dispatching to backend commands. This decouples backend handlers from discord.js object shapes and nested option trees.
 
 ```typescript
 class SlashCommandHandler {
   async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void>;
   private validatePermissions(interaction: ChatInputCommandInteraction): Promise<boolean>;
-  private executeCommand(command: string, options: any): Promise<CommandResult>;
+  private executeCommand(command: string, options: DiscordCommandDto): Promise<CommandResult>;
 }
 ```
+
+#### Versioned Adapter DTO Contract (`v1.0.0`)
+
+```typescript
+export interface DiscordCommandDto {
+  readonly version: '1.0.0';
+  readonly commandName: string;
+  readonly subcommandGroup?: string;
+  readonly subcommand?: string;
+  readonly options: Record<string, unknown>;
+  readonly details: Record<string, ValidatedOptionDto>;
+}
+```
+
+#### Supported Option Types
+
+| Discord Option Type | Normalized Type | Validation & Resolved Value |
+|---------------------|-----------------|-----------------------------|
+| `STRING` (3)        | `string`        | `typeof value === 'string'` |
+| `INTEGER` (4)       | `integer`       | `typeof value === 'number' && Number.isInteger(value)` |
+| `NUMBER` (10)       | `number`        | `typeof value === 'number' && Number.isFinite(value)` |
+| `BOOLEAN` (5)       | `boolean`       | `typeof value === 'boolean'` |
+| `USER` (6)          | `user`          | User ID string; resolved `{ id, username, bot }` |
+| `CHANNEL` (7)       | `channel`       | Channel ID string; resolved `{ id, name, type }` |
+| `ROLE` (8)          | `role`          | Role ID string; resolved `{ id, name }` |
+| `MENTIONABLE` (9)   | `mentionable`   | Mentionable entity ID string |
+| `ATTACHMENT` (11)   | `attachment`    | Resolved `{ id, name, url, contentType, size }` |
+| `SUB_COMMAND` (1)   | Hierarchy       | Flattened into `subcommand` + leaf options |
+| `SUB_COMMAND_GROUP` (2) | Hierarchy   | Flattened into `subcommandGroup` + `subcommand` + leaf options |
+
+- **Optional Values**: Missing or explicitly `null`/`undefined` optional options map to `null` with `isOptional: true`.
+- **Validation Errors**: Unsupported option types throw `CommandOptionValidationError` with code `UNSUPPORTED_OPTION_TYPE`; invalid values throw `INVALID_OPTION_VALUE`; malformed subcommand groups throw `MALFORMED_SUBCOMMAND_STRUCTURE`. The adapter intercepts these errors and responds with an ephemeral user notice.
 
 ### Legacy Command Handler
 
