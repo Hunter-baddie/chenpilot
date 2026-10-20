@@ -153,8 +153,23 @@ export class DiscordAdapter {
       } else if (interaction.isChatInputCommand()) {
         await this.handleCommandInteraction(interaction);
       }
-    } catch {
-      // TODO: Log error
+    } catch (error) {
+      // Keep diagnostics structured and exclude raw interaction data or error messages.
+      const interactionType = typeof interaction?.isButton === 'function' && interaction.isButton()
+        ? 'button'
+        : typeof interaction?.isModalSubmit === 'function' && interaction.isModalSubmit()
+          ? 'modal'
+          : typeof interaction?.isStringSelectMenu === 'function' && interaction.isStringSelectMenu()
+            ? 'select'
+            : typeof interaction?.isChatInputCommand === 'function' && interaction.isChatInputCommand()
+              ? 'command'
+              : 'unknown';
+      console.error('[DiscordAdapter] Interaction failed', {
+        errorClass: error instanceof Error ? error.name : 'UnknownError',
+        interactionType,
+        commandName: typeof interaction?.commandName === 'string' ? interaction.commandName : undefined,
+        correlationId: typeof interaction?.id === 'string' ? interaction.id : 'unknown',
+      });
     }
   }
 
