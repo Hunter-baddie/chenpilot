@@ -3,15 +3,15 @@
  * Coordinates all asset intelligence operations
  */
 
-import { AssetCache } from './AssetCache.js';
-import { CacheInvalidator } from './CacheInvalidator.js';
-import { MetadataRevisionStore } from './MetadataRevisionStore.js';
-import { TrustScorer } from '../trust/TrustScorer.js';
-import { TrustSignals } from '../trust/TrustSignals.js';
-import { TrustRegistry } from '../trust/TrustRegistry.js';
-import { AssetValidator } from '../compatibility/AssetValidator.js';
-import { NetworkCompatibility } from '../compatibility/NetworkCompatibility.js';
-import { VersionCompatibility } from '../compatibility/VersionCompatibility.js';
+import { AssetCache } from './AssetCache';
+import { CacheInvalidator } from './CacheInvalidator';
+import { MetadataRevisionStore } from './MetadataRevisionStore';
+import { TrustScorer } from '../trust/TrustScorer';
+import { TrustSignals } from '../trust/TrustSignals';
+import { TrustRegistry } from '../trust/TrustRegistry';
+import { AssetValidator } from '../compatibility/AssetValidator';
+import { NetworkCompatibility } from '../compatibility/NetworkCompatibility';
+import { VersionCompatibility } from '../compatibility/VersionCompatibility';
 import { 
   Asset, 
   AssetData, 
@@ -24,7 +24,7 @@ import {
   AssetIntelligenceError,
   ErrorCode,
   MetadataRevision,
-} from './types.js';
+} from './types';
 
 export class AssetIntelligence {
   private cache: AssetCache;
