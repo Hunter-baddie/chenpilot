@@ -29,6 +29,7 @@
  */
 
 import type { Response } from "express";
+import { redactSecrets } from "../utils/errorRedaction";
 
 /**
  * Stable, machine-readable error codes that clients can switch on without
@@ -256,6 +257,8 @@ export class ApiError extends Error {
   /**
    * Serialize this `ApiError` to the canonical JSON envelope. The `stack`
    * is *only* included in non-production environments.
+   *
+   * Details are redacted to prevent secret values from appearing in responses.
    */
   toResponse(includeStack = false): ApiErrorResponseBody {
     return {
@@ -264,7 +267,7 @@ export class ApiError extends Error {
       error: {
         message: this.message,
         code: this.code,
-        details: this.details,
+        details: this.details ? redactSecrets(this.details) : undefined,
         stack: includeStack ? this.stack : undefined,
       },
     };

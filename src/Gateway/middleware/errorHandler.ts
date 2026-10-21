@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import logger from "../../config/logger";
 import { ApiErrorCode, isApiError } from "../../contracts/errorContract";
+import { redactSecrets } from "../../utils/errorRedaction";
 
 /**
  * Central error-rendering middleware.
@@ -87,6 +88,7 @@ export async function ErrorHandler(
       method: req.method,
       url: req.originalUrl,
       message: err.message,
+      details: err.details ? redactSecrets(err.details) : undefined,
     });
     res.status(err.statusCode).json(err.toResponse(includeStack));
     return;
