@@ -20,9 +20,11 @@ import { SafeBackendClient } from '../commands/services/BackendClient';
 import {
   ModerationPolicyEngine,
   InMemoryAuditSink,
+  JsonLinesAuditSink,
   createDefaultModerationPolicy,
   isModerationEnabled,
   discordMessageToModerationEvent,
+  type ModerationAuditSink,
   type ModerationResult,
 } from '../moderation/index';
 import { mapDiscordCommandOptions } from './commandOptionsMapper';
@@ -59,6 +61,10 @@ export interface DiscordAdapterConfig {
    * (shared with the legacy adapter's audit log) when omitted.
    */
   moderationLogChannelId?: string;
+  /** Optional append-only JSONL file for durable moderation audit records. */
+  moderationAuditFilePath?: string;
+  /** Optional custom audit sink; takes precedence over moderationAuditFilePath. */
+  moderationAuditSink?: ModerationAuditSink;
 }
 
 export class DiscordAdapter {
@@ -68,7 +74,7 @@ export class DiscordAdapter {
   private roleGate: RoleGate;
   private backendClient: SafeBackendClient;
   private moderationEngine: ModerationPolicyEngine;
-  private moderationAuditSink: InMemoryAuditSink;
+  private moderationAuditSink: ModerationAuditSink;
   private moderationEnabled: boolean;
   private moderationLogChannelId?: string;
   private config: DiscordAdapterConfig;
@@ -89,7 +95,13 @@ export class DiscordAdapter {
     // Initialize modular components
     this.buttonHandler = new ButtonHandler();
     this.threadSafety = new ThreadSafety();
-    this.roleGate = new RoleGate();
+    this.roleGate = new RoleGate({
+      fetchRoles: async (userId, guildId) => {
+        const guild = await this.client.guilds.fetch(guildId);
+        const member = await guild.members.fetch({ user: userId, force: true });
+        return member.roles.cache.map((role) => role.id);
+      },
+    });
     this.backendClient = new SafeBackendClient(config.backendUrl);
 
     // Configure role gate
@@ -102,7 +114,11 @@ export class DiscordAdapter {
       config.moderationLogChannelId ||
       process.env.MODERATION_LOG_CHANNEL_ID ||
       process.env.DISCORD_AUDIT_LOG_CHANNEL_ID;
-    this.moderationAuditSink = new InMemoryAuditSink();
+    this.moderationAuditSink =
+      config.moderationAuditSink ??
+      (config.moderationAuditFilePath
+        ? new JsonLinesAuditSink(config.moderationAuditFilePath)
+        : new InMemoryAuditSink());
     const { rules, escalation } = createDefaultModerationPolicy();
     this.moderationEngine = new ModerationPolicyEngine({
       rules,
@@ -144,6 +160,28 @@ export class DiscordAdapter {
 
     this.client.on('messageCreate', async (message) => {
       await this.handleMessage(message);
+    });
+
+    this.client.on('guildMemberUpdate', (_oldMember, member) => {
+      this.roleGate.invalidateCache(member.id, member.guild.id);
+    });
+    this.client.on('guildMemberAdd', (member) => {
+      this.roleGate.invalidateCache(member.id, member.guild.id);
+    });
+    this.client.on('guildMemberRemove', (member) => {
+      this.roleGate.invalidateCache(member.id, member.guild.id);
+    });
+    this.client.on('roleCreate', (role) => {
+      this.roleGate.invalidateGuildCache(role.guild.id);
+    });
+    this.client.on('roleUpdate', (_oldRole, role) => {
+      this.roleGate.invalidateGuildCache(role.guild.id);
+    });
+    this.client.on('roleDelete', (role) => {
+      this.roleGate.invalidateGuildCache(role.guild.id);
+    });
+    this.client.on('guildUpdate', (_oldGuild, guild) => {
+      this.roleGate.invalidateGuildCache(guild.id);
     });
   }
 
@@ -237,20 +275,18 @@ export class DiscordAdapter {
     const commandName = interaction.commandName;
 
     // Check role gate
-    if (interaction.guildId) {
-      const canExecute = await this.roleGate.checkGate(
-        commandName,
-        interaction.user.id,
-        interaction.guildId
-      );
+    const canExecute = await this.roleGate.checkGate(
+      commandName,
+      interaction.user.id,
+      interaction.guildId ?? '',
+    );
 
-      if (!canExecute) {
-        await interaction.reply({
-          content: 'You do not have permission to use this command',
-          ephemeral: true,
-        });
-        return;
-      }
+    if (!canExecute) {
+      await interaction.reply({
+        content: 'You do not have permission to use this command',
+        ephemeral: true,
+      });
+      return;
     }
 
     // Validate and map raw options into versioned DTO
@@ -393,7 +429,7 @@ export class DiscordAdapter {
    * Read-only access to the moderation audit trail — used by tests and
    * admin tooling that needs to inspect recent decisions.
    */
-  getModerationAuditSink(): InMemoryAuditSink {
+  getModerationAuditSink(): ModerationAuditSink {
     return this.moderationAuditSink;
   }
 
