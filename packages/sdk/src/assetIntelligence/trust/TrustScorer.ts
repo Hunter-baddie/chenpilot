@@ -4,8 +4,8 @@
  */
 
 import { TrustSignal, TrustScore, Asset } from '../core/types';
-import { TrustSignals } from './TrustSignals.js';
-import { TrustRegistry } from './TrustRegistry.js';
+import { TrustSignals } from './TrustSignals';
+import { TrustRegistry } from './TrustRegistry';
 
 export interface TrustConfig {
   weights: Record<string, number>;

@@ -262,6 +262,18 @@ keep compiling and emitting the same (or richer) envelope.
   - `ErrorHandler` rendering for `ApiError`, legacy `ApplicationError`,
     plain `Error`, and Postgres error code `23505`
 
+**SDK mapping contract (#1047):** the published SDK maps backend
+`ApiErrorCode`s onto its own registered error taxonomy via
+`packages/sdk/src/errorMapping.ts` (`BACKEND_ERROR_MAPPINGS`). Every backend
+code must have an explicit mapping or explicit passthrough policy; every SDK
+`SdkErrorCode` must be reachable from a backend mapping, an HTTP fallback, or
+declared `SDK_NATIVE_ERROR_CODES`. `packages/sdk/src/__tests__/errorMappingContract.test.ts`
+fails when a code is added without an update, and
+`packages/sdk/src/__tests__/agentErrorMapping.test.ts` locks the agent client's
+registered-code behaviour (including `AGENT_SESSION_EXPIRED`,
+`AGENT_BAD_RESPONSE`, and cancellation staying outside the request-error
+taxonomy). Keep both suites green when adding error codes.
+
 ## Dependencies
 
 - `class-transformer` is added as a direct root dependency. It was
