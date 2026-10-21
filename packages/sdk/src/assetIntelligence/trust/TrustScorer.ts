@@ -32,8 +32,11 @@ export class TrustScorer {
    */
   async calculateTrustScore(asset: Asset): Promise<TrustScore> {
     const signals = await this.trustSignals.getAllSignals(asset);
-    const overall = this.calculateWeightedScore(signals);
-    const verificationStatus = this.determineVerificationStatus(overall);
+    const knownSignals = signals.filter(signal => signal.status === 'known');
+    const overall = this.calculateWeightedScore(knownSignals);
+    const verificationStatus = knownSignals.length === 0
+      ? 'unverified'
+      : this.determineVerificationStatus(overall);
 
     return {
       overall,
@@ -55,6 +58,9 @@ export class TrustScorer {
     let weightedSum = 0;
 
     for (const signal of signals) {
+      if (signal.value === null) {
+        continue;
+      }
       const weight = this.config.weights[signal.type] || 1;
       weightedSum += signal.value * weight;
       totalWeight += weight;
