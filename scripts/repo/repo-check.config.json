@@ -270,5 +270,10 @@
         ]
       }
     }
+  },
+  "tsCompat": {
+    "minimumTypeScript": "4.5.2",
+    "consumerFixture": "packages/sdk/__fixtures__/consumption/typescript/consumer.ts",
+    "notes": "4.5.2 is the oldest stable TypeScript satisfying packages/sdk peerDependencies.typescript >=4.5.0"
   }
 }
