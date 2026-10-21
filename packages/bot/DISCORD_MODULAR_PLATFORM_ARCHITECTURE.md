@@ -152,6 +152,8 @@ class CommandHandler {
 
 The adapter decodes and validates incoming `interaction.options.data` into a versioned, platform-neutral `DiscordCommandDto` before dispatching to backend commands. This decouples backend handlers from discord.js object shapes and nested option trees.
 
+The deployed slash-command definitions in `src/slashCommands.ts` are checked against the command cases and option getters in `src/adapters/discord.ts`. Run `pnpm run discord:commands:check` before deployment; it fails with separate missing, stale, and incompatible command reports. Focused contract tests are available with `pnpm run discord:commands:test`, and both checks run in the deployment workflow.
+
 ```typescript
 class SlashCommandHandler {
   async handleSlashCommand(interaction: ChatInputCommandInteraction): Promise<void>;

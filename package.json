@@ -6,6 +6,8 @@
   "packageManager": "pnpm@10.13.1",
   "scripts": {
     "test": "jest",
+    "discord:commands:check": "node scripts/repo/check-discord-command-contract.mjs",
+    "discord:commands:test": "node --test tests/unit/discordCommandContract.test.mjs",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:performance": "node --expose-gc ./node_modules/jest/bin/jest.js tests/performance --runInBand",
