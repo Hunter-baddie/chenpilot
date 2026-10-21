@@ -41,6 +41,7 @@ JSON envelope:
 {
   "success": false,
   "status": 404,
+  "requestId": "8f1c…",
   "error": {
     "message": "User not found",
     "code": "NOT_FOUND",
@@ -48,6 +49,11 @@ JSON envelope:
   }
 }
 ```
+
+`requestId` is the opaque correlation identifier minted at the inbound
+transport boundary (HTTP request or socket event). It is safe to show to
+clients, is included in the matching structured server logs, and should be
+quoted in support requests.
 
 …and every successful response uses the matching envelope:
 
