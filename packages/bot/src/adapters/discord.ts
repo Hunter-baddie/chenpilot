@@ -1,4 +1,6 @@
 import { APIEmbed, Client, GatewayIntentBits, Message, TextChannel, Collection, Invite, GuildMember, Interaction, ChatInputCommandInteraction, ThreadChannel } from 'discord.js';
+import { renderTransactionPreview } from "../../src/Security/antiPhishing/xdrPreview";
+import { Client, GatewayIntentBits, Message, TextChannel, Collection, Invite, GuildMember, Interaction, ChatInputCommandInteraction, ThreadChannel } from 'discord.js';
 import { TransactionNotificationData, PriceAlert } from './types';
 import { createTrustlineOperation } from '@chen-pilot/sdk-core';
 import { normalizeCommand, SUPPORTED_CURRENCIES, SupportedCurrency } from '../commands';
@@ -1374,6 +1376,14 @@ export class DiscordAdapter {
   }
 
   private formatTransactionMessage(data: TransactionNotificationData): string {
+    if (data.xdr) {
+      const preview = renderTransactionPreview(data.xdr);
+      if (!preview.safe) {
+        return `**${preview.message}**\n\n🚫 **TRANSACTION BLOCKED**`;
+      }
+      return preview.message + "\n\n✅ **Safe to Sign**";
+    }
+
     const statusEmoji = data.successful ? "✅" : "❌";
     const timestamp = new Date(data.timestamp).toLocaleString();
 
