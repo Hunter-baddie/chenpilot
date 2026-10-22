@@ -15,6 +15,7 @@ import {
   DeliveryClass,
   SocketFlowController,
 } from "./flowControl";
+import { validateSubscriptionPayload } from "./socketValidation";
 import { BOT_ALL_ROOM, RoomKind, tryBuildRoomName } from "./roomNames";
 import {
   resolveSubscriptionLimits,
@@ -372,6 +373,115 @@ export class SocketManager {
             },
             { transactionId }
           );
+          // Audit log denial
+          await auditLogService.log({
+            userId: 'anonymous',
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.WARNING,
+            ipAddress: socket.handshake.address,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "transactions",
+              reason: "unauthenticated",
+              socketId: socket.id,
+            },
+            success: false,
+          }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+          return;
+        }
+
+        // Validate payload before any lookup or audit write
+        const validation = validateSubscriptionPayload('transactions', transactionId);
+        if (!validation.valid) {
+          socket.emit("error", {
+            message: validation.error || "Invalid subscription payload",
+            code: validation.code,
+          });
+          logger.warn(
+            `Subscription payload validation failed for client ${socket.id}: ${validation.code}`
+          );
+          // Audit log denial
+          await auditLogService.log({
+            userId: client.userId,
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.WARNING,
+            ipAddress: client.ip,
+            userAgent: client.userAgent,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "transactions",
+              reason: `validation_failed:${validation.code}`,
+              socketId: socket.id,
+            },
+            success: false,
+          }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+          return;
+        }
+
+        const abuseDecision = await evaluateRealtimeAbusePolicy(
+          "subscribe:transactions",
+          {
+            userId: client.userId,
+            sessionId: socket.id,
+            ipAddress: socket.handshake.address,
+          },
+          { transactionId }
+        );
+        const authz = await authorizeSocketOperation(
+          { userId: client.userId, role: client.role },
+          "realtime:subscribe",
+          "subscribe:transactions"
+        );
+        if (!authz.allowed) {
+          socket.emit("error", {
+            message: "Not authorized for this subscription.",
+            code: authz.reason,
+            decisionId: authz.decisionId,
+          });
+          // Audit log denial
+          await auditLogService.log({
+            userId: client.userId,
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.WARNING,
+            ipAddress: client.ip,
+            userAgent: client.userAgent,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "transactions",
+              reason: `unauthorized:${authz.reason}`,
+              decisionId: authz.decisionId,
+              socketId: socket.id,
+            },
+            success: false,
+          }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+          return;
+        }
+        if (!abuseDecision.allowed) {
+          socket.emit("error", {
+            message: abuseDecision.reason,
+            code: abuseDecision.policyId,
+            retryAfterMs: abuseDecision.retryAfterMs,
+          });
+          // Audit log denial
+          await auditLogService.log({
+            userId: client.userId,
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.WARNING,
+            ipAddress: client.ip,
+            userAgent: client.userAgent,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "transactions",
+              reason: `abuse_policy:${abuseDecision.policyId}`,
+              policyId: abuseDecision.policyId,
+              socketId: socket.id,
+            },
+            success: false,
+          }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+          return;
+        }
+        if (transactionId) {
+          socket.join(`transaction:${transactionId}`);
           const authz = await authorizeSocketOperation(
             { userId: client.userId, role: client.role },
             "realtime:subscribe",
@@ -632,6 +742,34 @@ export class SocketManager {
     // Handle subscription to transaction updates
     socket.on("subscribe:transactions", async (transactionId?: string) => {
       try {
+        // Validate payload before any lookup or audit write
+        const validation = validateSubscriptionPayload('transactions', transactionId);
+        if (!validation.valid) {
+          socket.emit("error", {
+            message: validation.error || "Invalid subscription payload",
+            code: validation.code,
+          });
+          logger.warn(
+            `Subscription payload validation failed for client ${socket.id}: ${validation.code}`
+          );
+          // Audit log denial
+          await auditLogService.log({
+            userId: client.userId,
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.WARNING,
+            ipAddress: client.ip,
+            userAgent: client.userAgent,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "transactions",
+              reason: `validation_failed:${validation.code}`,
+              socketId: socket.id,
+            },
+            success: false,
+          }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+          return;
+        }
+
         if (transactionId) {
           // TODO: Verify user owns this transactionId (add a lookup here later)
           const result = subscribeToTransaction(
@@ -677,6 +815,53 @@ export class SocketManager {
     // Handle subscription to bot updates
     socket.on("subscribe:bot-alerts", async (botId?: string) => {
       try {
+        // Validate payload before any lookup or audit write
+        const validation = validateSubscriptionPayload('bot-alerts', botId);
+        if (!validation.valid) {
+          socket.emit("error", {
+            message: validation.error || "Invalid subscription payload",
+            code: validation.code,
+          });
+          logger.warn(
+            `Subscription payload validation failed for client ${socket.id}: ${validation.code}`
+          );
+          // Audit log denial
+          await auditLogService.log({
+            userId: client.userId,
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.WARNING,
+            ipAddress: client.ip,
+            userAgent: client.userAgent,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "bot-alerts",
+              reason: `validation_failed:${validation.code}`,
+              socketId: socket.id,
+            },
+            success: false,
+          }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+          return;
+        }
+
+        if (botId) {
+          // TODO: Verify user owns this botId (add a lookup here later)
+          socket.join(`bot:${botId}`);
+          logger.info(
+            `Client ${socket.id} (user: ${client.userId}) subscribed to bot ${botId}`
+          );
+
+          await auditLogService.log({
+            userId: client.userId,
+            action: AuditAction.SENSITIVE_DATA_ACCESS,
+            severity: AuditSeverity.INFO,
+            ipAddress: client.ip,
+            userAgent: client.userAgent,
+            resource: "realtime:subscription",
+            metadata: {
+              type: "bot-alerts",
+              botId,
+            },
+            success: true,
         // TODO: Verify user owns this botId (add a lookup here later)
         const result = subscribeToBot(
           socket,
