@@ -17,6 +17,8 @@ import {
 } from "./flowControl";
 import { validateSubscriptionPayload } from "./socketValidation";
 import { BOT_ALL_ROOM, RoomKind, tryBuildRoomName } from "./roomNames";
+import { auditLogService } from "../AuditLog/auditLog.service";
+import { AuditAction, AuditSeverity } from "../AuditLog/auditLog.entity";
 import {
   resolveSubscriptionLimits,
   subscribeToBot,
@@ -25,6 +27,12 @@ import {
   unsubscribeFromBot,
   unsubscribeFromTransaction,
 } from "./subscriptionManager";
+import {
+  DENIED_REASON,
+  ResourceSubscription,
+  roomName,
+  SubscriptionAccess,
+} from "./subscriptionAccess";
 
 /**
  * Resolve the per-socket critical-event buffer bound from the environment.
@@ -228,6 +236,7 @@ export class SocketManager {
   private jwtService: JwtService;
   private flowController: SocketFlowController;
   private subscriptionManager: SubscriptionManager;
+  private subscriptionAccess: SubscriptionAccess;
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -250,6 +259,7 @@ export class SocketManager {
     this.subscriptionManager = new SubscriptionManager(
       resolveSubscriptionLimits()
     );
+    this.subscriptionAccess = new SubscriptionAccess();
     this.flowController = new SocketFlowController(
       {
         maxBufferedEventsPerSocket: resolveMaxBufferedEvents(
@@ -481,6 +491,32 @@ export class SocketManager {
           return;
         }
         if (transactionId) {
+          const decision = await this.subscriptionAccess.authorizeTransaction(
+            client.userId,
+            transactionId
+          );
+          if (!decision.allowed) {
+            this.emitClientError(socket, {
+              message: DENIED_REASON,
+              code: "NOT_AUTHORIZED",
+            });
+            await auditLogService.log({
+              userId: client.userId,
+              action: AuditAction.SENSITIVE_DATA_ACCESS,
+              severity: AuditSeverity.WARNING,
+              ipAddress: client.ip,
+              userAgent: client.userAgent,
+              resource: "realtime:subscription",
+              metadata: {
+                type: "transactions",
+                transactionId,
+                reason: "ownership_denied",
+                socketId: socket.id,
+              },
+              success: false,
+            }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+            return;
+          }
           socket.join(`transaction:${transactionId}`);
           const authz = await authorizeSocketOperation(
             { userId: client.userId, role: client.role },
@@ -519,6 +555,10 @@ export class SocketManager {
             });
             return;
           }
+          this.subscriptionAccess.track(socket.id, client.userId, {
+            kind: "transaction",
+            resourceId: transactionId,
+          });
           logger.info(
             `Client ${socket.id} subscribed to transaction ${transactionId}`,
             { requestId: getExecutionContext()?.requestId }
@@ -571,6 +611,34 @@ export class SocketManager {
             });
             return;
           }
+          if (botId) {
+            const botDecision = await this.subscriptionAccess.authorizeBot(
+              client.userId,
+              botId
+            );
+            if (!botDecision.allowed) {
+              this.emitClientError(socket, {
+                message: DENIED_REASON,
+                code: "NOT_AUTHORIZED",
+              });
+              await auditLogService.log({
+                userId: client.userId,
+                action: AuditAction.SENSITIVE_DATA_ACCESS,
+                severity: AuditSeverity.WARNING,
+                ipAddress: client.ip,
+                userAgent: client.userAgent,
+                resource: "realtime:subscription",
+                metadata: {
+                  type: "bot-alerts",
+                  botId,
+                  reason: "ownership_denied",
+                  socketId: socket.id,
+                },
+                success: false,
+              }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+              return;
+            }
+          }
           const result = subscribeToBot(
             socket,
             this.subscriptionManager,
@@ -583,6 +651,12 @@ export class SocketManager {
               code: result.code,
             });
             return;
+          }
+          if (botId) {
+            this.subscriptionAccess.track(socket.id, client.userId, {
+              kind: "bot",
+              resourceId: botId,
+            });
           }
           logger.info(
             botId
@@ -623,6 +697,10 @@ export class SocketManager {
             });
             return;
           }
+          this.subscriptionAccess.untrack(socket.id, {
+            kind: "transaction",
+            resourceId: transactionId,
+          });
           socket.emit("unsubscribed", {
             channel: "transactions",
             transactionId,
@@ -658,6 +736,12 @@ export class SocketManager {
             });
             return;
           }
+          if (botId) {
+            this.subscriptionAccess.untrack(socket.id, {
+              kind: "bot",
+              resourceId: botId,
+            });
+          }
           socket.emit("unsubscribed", {
             channel: "bot-alerts",
             botId: botId ?? null,
@@ -677,6 +761,7 @@ export class SocketManager {
       socket.on("disconnect", async (reason) => {
         clearTimeout(authTimeout);
         this.subscriptionManager.clearSocket(socket.id);
+        this.subscriptionAccess.clearSocket(socket.id);
         const disconnectedClient = this.connectedClients.get(socket.id);
         if (disconnectedClient?.userId) {
           const userSockets = this.userSockets.get(disconnectedClient.userId);
@@ -771,7 +856,36 @@ export class SocketManager {
         }
 
         if (transactionId) {
-          // TODO: Verify user owns this transactionId (add a lookup here later)
+          const decision = await this.subscriptionAccess.authorizeTransaction(
+            client.userId,
+            transactionId
+          );
+          if (!decision.allowed) {
+            this.emitClientError(socket, {
+              message: DENIED_REASON,
+              code: "NOT_AUTHORIZED",
+            });
+            await auditLogService.log({
+              userId: client.userId,
+              action: AuditAction.SENSITIVE_DATA_ACCESS,
+              severity: AuditSeverity.WARNING,
+              ipAddress: client.ip,
+              userAgent: client.userAgent,
+              resource: "realtime:subscription",
+              metadata: {
+                type: "transactions",
+                transactionId,
+                reason: "ownership_denied",
+                socketId: socket.id,
+              },
+              success: false,
+            }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+            return;
+          }
+          this.subscriptionAccess.track(socket.id, client.userId, {
+            kind: "transaction",
+            resourceId: transactionId,
+          });
           const result = subscribeToTransaction(
             socket,
             this.subscriptionManager,
@@ -844,25 +958,33 @@ export class SocketManager {
         }
 
         if (botId) {
-          // TODO: Verify user owns this botId (add a lookup here later)
-          socket.join(`bot:${botId}`);
-          logger.info(
-            `Client ${socket.id} (user: ${client.userId}) subscribed to bot ${botId}`
+          const decision = await this.subscriptionAccess.authorizeBot(
+            client.userId,
+            botId
           );
-
-          await auditLogService.log({
-            userId: client.userId,
-            action: AuditAction.SENSITIVE_DATA_ACCESS,
-            severity: AuditSeverity.INFO,
-            ipAddress: client.ip,
-            userAgent: client.userAgent,
-            resource: "realtime:subscription",
-            metadata: {
-              type: "bot-alerts",
-              botId,
-            },
-            success: true,
-        // TODO: Verify user owns this botId (add a lookup here later)
+          if (!decision.allowed) {
+            this.emitClientError(socket, {
+              message: DENIED_REASON,
+              code: "NOT_AUTHORIZED",
+            });
+            await auditLogService.log({
+              userId: client.userId,
+              action: AuditAction.SENSITIVE_DATA_ACCESS,
+              severity: AuditSeverity.WARNING,
+              ipAddress: client.ip,
+              userAgent: client.userAgent,
+              resource: "realtime:subscription",
+              metadata: {
+                type: "bot-alerts",
+                botId,
+                reason: "ownership_denied",
+                socketId: socket.id,
+              },
+              success: false,
+            }).catch((err) => logger.error("Failed to log subscription denial audit event", { err }));
+            return;
+          }
+        }
         const result = subscribeToBot(
           socket,
           this.subscriptionManager,
@@ -875,6 +997,12 @@ export class SocketManager {
             code: result.code,
           });
           return;
+        }
+        if (botId) {
+          this.subscriptionAccess.track(socket.id, client.userId, {
+            kind: "bot",
+            resourceId: botId,
+          });
         }
         logger.info(
           botId
@@ -1195,6 +1323,26 @@ export class SocketManager {
    */
   public getIO(): SocketIOServer {
     return this.io;
+  }
+
+  /**
+   * Revoke room membership for a resource whose ownership or grants changed.
+   * Affected sockets leave the room immediately without requiring reconnect.
+   */
+  public revokeAccess(userId: string, sub: ResourceSubscription): void {
+    const sockets = this.subscriptionAccess.findForResource(userId, sub);
+    const room = roomName(sub);
+    for (const socketId of sockets) {
+      const socket = this.io.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.leave(room);
+      }
+      this.subscriptionAccess.untrack(socketId, sub);
+      this.subscriptionManager.tryUnsubscribe(socketId, room);
+      logger.info(
+        `Revoked ${sub.kind}:${sub.resourceId} access for socket ${socketId}`
+      );
+    }
   }
 
   /**
