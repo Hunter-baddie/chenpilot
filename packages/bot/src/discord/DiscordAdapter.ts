@@ -268,6 +268,17 @@ export class DiscordAdapter {
       throw error;
     }
 
+    // Defer eligible interactions before backend work to avoid Discord 3s initial response timeout
+    let isDeferred = Boolean(interaction.deferred);
+    if (!isDeferred && !interaction.replied && typeof interaction.deferReply === 'function') {
+      try {
+        await interaction.deferReply();
+        isDeferred = true;
+      } catch (error) {
+        console.error('[DiscordAdapter] Failed to defer command interaction:', error);
+      }
+    }
+
     try {
       const result = await this.backendClient.executeCommand(
         commandName,
@@ -275,14 +286,50 @@ export class DiscordAdapter {
         interaction.user.id
       );
 
-      await interaction.reply({
-        content: JSON.stringify(result),
-        ephemeral: false,
-      });
+      await this.sendInteractionResponse(
+        interaction,
+        JSON.stringify(result),
+        false,
+        isDeferred
+      );
     } catch {
+      await this.sendInteractionResponse(
+        interaction,
+        'Failed to execute command',
+        true,
+        isDeferred
+      );
+    }
+  }
+
+  /**
+   * Send interaction response using follow-up (editReply / followUp) if deferred/replied,
+   * or initial reply if not yet acknowledged. Ensures each interaction is acknowledged exactly once.
+   */
+  private async sendInteractionResponse(
+    interaction: ChatInputCommandInteraction,
+    content: string,
+    ephemeral = false,
+    deferredState = false
+  ): Promise<void> {
+    const isDeferred = deferredState || Boolean(interaction.deferred);
+
+    if (isDeferred) {
+      if (typeof interaction.editReply === 'function') {
+        await interaction.editReply({ content });
+      } else if (typeof interaction.followUp === 'function') {
+        await interaction.followUp({ content, ephemeral });
+      }
+    } else if (interaction.replied) {
+      if (typeof interaction.followUp === 'function') {
+        await interaction.followUp({ content, ephemeral });
+      } else if (typeof interaction.editReply === 'function') {
+        await interaction.editReply({ content });
+      }
+    } else if (typeof interaction.reply === 'function') {
       await interaction.reply({
-        content: 'Failed to execute command',
-        ephemeral: true,
+        content,
+        ephemeral,
       });
     }
   }

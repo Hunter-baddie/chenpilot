@@ -33,6 +33,13 @@ Core SDK for Chen Pilot cross-chain operations with Stellar/Soroban support.
 npm install @chen-pilot/sdk-core
 ```
 
+## Requirements
+
+- **TypeScript** `>= 4.5.2` (declared as a `peerDependency`; CI compiles the
+  published declarations and a fixture consumer against that minimum —
+  see `node scripts/repo/check-ts-compat.mjs`)
+- Node.js 18+
+
 ## Quick Start
 
 ### Basic Usage
