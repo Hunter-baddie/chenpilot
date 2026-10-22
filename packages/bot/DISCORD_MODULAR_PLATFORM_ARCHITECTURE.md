@@ -360,6 +360,8 @@ class RoleManager {
 
 ### Role Cache
 
+The Discord adapter resolves command-gate membership through the guild member API. Lookups time out after five seconds, successful role lists are cached for at most five minutes and 10,000 entries, and lookup failures deny gated commands without caching a result. Member updates invalidate that member; role and guild updates invalidate that guild. Gate/admin-role configuration changes clear the cache. Call `invalidateCache`, `invalidateGuildCache`, or `clearCache` after out-of-band changes.
+
 ```typescript
 class RoleCache {
   private cache: Map<string, RoleCacheEntry>;
@@ -371,6 +373,10 @@ class RoleCache {
   cleanup(): void; // Remove expired entries
 }
 ```
+
+### Moderation Audit Persistence
+
+The Discord adapter uses a bounded in-memory audit sink by default. Set `moderationAuditFilePath` to append non-allow moderation records as JSONL across restarts, or provide `moderationAuditSink` to use another sink (it takes precedence over the file path). Audit sink errors are swallowed by the policy engine and do not change enforcement decisions. JSONL files are append-only and are not automatically pruned or rotated; operators must set access controls and apply their own archival and retention policy.
 
 ## Scam Detection Module
 
