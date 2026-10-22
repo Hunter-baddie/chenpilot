@@ -86,10 +86,15 @@ export type ApiErrorDetails =
 
 /**
  * The wire shape returned to clients when a request fails.
+ *
+ * `requestId` is the opaque correlation identifier minted at the inbound
+ * transport boundary (HTTP request or socket event). It is safe to show to
+ * clients and should be quoted in support requests.
  */
 export interface ApiErrorResponseBody {
   success: false;
   status: number;
+  requestId?: string;
   error: {
     message: string;
     code: ApiErrorCode | string;
