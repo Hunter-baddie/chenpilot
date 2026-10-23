@@ -197,6 +197,15 @@
       "packages/sdk"
     ]
   },
+  "duplicateDependencies": {
+    "workspaces": [".", "packages/sdk", "packages/bot"],
+    "allow": [
+      { "name": "@types/jest", "reason": "Root uses Jest 30 types; sdk/bot pinned to Jest 29 types matching their jest major." },
+      { "name": "@types/node", "reason": "Root targets Node 25 types; sdk/bot pinned to Node 20 LTS types." },
+      { "name": "dotenv", "reason": "Root uses dotenv 17; bot pinned to dotenv 16 for telegraf compatibility." },
+      { "name": "jest", "reason": "Root uses Jest 30; sdk/bot pinned to Jest 29." }
+    ]
+  },
   "installWorkflow": {
     "packageManager": "pnpm",
     "command": [

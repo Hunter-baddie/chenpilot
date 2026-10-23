@@ -44,7 +44,7 @@
     "docs:index": "node scripts/docs/check-doc-index.mjs --write",
     "docs:check": "node scripts/docs/check-generated-docs.mjs && node scripts/docs/check-root-artifacts.mjs && node scripts/docs/check-markdown-links.mjs && node scripts/docs/check-doc-index.mjs && node scripts/docs/check-archive.mjs && node scripts/docs/check-runbooks.mjs && node scripts/env/check-env-docs.mjs && node scripts/migrations/check-migrations.mjs",
     "test:docs": "node --test tests/docs/*.test.mjs tests/env/*.test.mjs tests/migrations/*.test.mjs",
-    "repo:check": "node scripts/repo/check-package-boundaries.mjs && node scripts/repo/check-generated-files.mjs && node scripts/repo/check-dependency-aliases.mjs && node scripts/repo/check-install-workflow.mjs && node scripts/repo/check-package-manifests.mjs && node scripts/repo/check-package-contents.mjs && node scripts/repo/check-ts-compat.mjs",
+    "repo:check": "node scripts/repo/check-package-boundaries.mjs && node scripts/repo/check-generated-files.mjs && node scripts/repo/check-dependency-aliases.mjs && node scripts/repo/check-duplicate-dependencies.mjs && node scripts/repo/check-install-workflow.mjs && node scripts/repo/check-package-manifests.mjs && node scripts/repo/check-package-contents.mjs && node scripts/repo/check-ts-compat.mjs",
     "test:repo": "node --test tests/repo/*.test.mjs",
     "preflight": "node scripts/env/preflight.mjs",
     "env:docs": "node scripts/env/check-env-docs.mjs --write",
