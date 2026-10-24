@@ -157,6 +157,12 @@ jobs:
         run: npm pack --dry-run
         working-directory: packages/sdk
 
+      - name: Minimum TypeScript compatibility (#1000)
+        run: node scripts/repo/check-ts-compat.mjs
+
+      - name: Package contents allowlist (#999)
+        run: node scripts/repo/check-package-contents.mjs
+
   contract-health:
     name: Soroban contract compatibility
     runs-on: ubuntu-latest
@@ -175,6 +181,9 @@ jobs:
 
       - name: Contract tests
         run: cargo test --manifest-path contracts/Cargo.toml --workspace
+
+      - name: Contract artifact reproducibility (#998)
+        run: node scripts/repo/check-contract-reproducibility.mjs
 
   contract-conservation:
     name: Protocol conservation invariants (release candidate gate)
